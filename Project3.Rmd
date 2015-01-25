@@ -1,0 +1,127 @@
+---
+title: "Practical Machine Learning"
+author: "Matthieu"
+date: "19 janvier 2015"
+output: html_document
+---
+
+he training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-data.training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-tesData.csv
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+1. Your submission should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-).
+2. You should also apply your machine learning algorithm to the 20 test cases available in the test data above. Please submit your predictions in appropriate format to the programming assignment for automated grading. See the programming assignment for additional details. 
+
+#Loading some library
+```{r}
+library(caret);library(randomForest)
+```
+
+
+#load data
+```{r, echo=FALSE}
+testing <- 0
+training <- 0
+testing$url = 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+testing$file = 'pml-testing.csv'
+training$url = 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+training$file =  'pml-training.csv'
+if(!file.exists(training$file))
+        download.file(training$url, training$file, method='curl')
+if(!file.exists(testing$file))
+        download.file(testing$url, testing$file, method='curl')
+
+data.training.raw <- read.csv(training$file)
+raw.testing <- read.csv(testing$file)
+```
+
+## preparation of the data
+Create training and test sets
+````{r}
+data.training.part <- createDataPartition(data.training.raw$classe, list=FALSE, p=.9)
+data.training = data.training.raw[data.training.part,]
+data.testing = data.training.raw[-data.training.part,]
+````
+
+Optimize the data
+````{r}
+nzv <- nearZeroVar(data.training)
+
+data.training <- data.training[-nzv]
+data.testing <- data.testing[-nzv]
+raw.testing <- raw.testing[-nzv]
+````
+
+Filter columns with only numeric value.
+````{r}
+col.index = which(lapply(data.training,class) %in% c('numeric')  )
+````
+
+
+Build predictions
+````{r}
+data.training.preModel <- preProcess(data.training[,col.index], method=c('knnImpute'))
+
+data.training.predict <- cbind(data.training$classe, 
+                          predict(data.training.preModel, data.training[,col.index]))
+
+data.testing.predict <- cbind(data.testing$classe, 
+                  predict(data.training.preModel, data.testing[,col.index]))
+
+raw.testing.predict <- predict(data.training.preModel, raw.testing[,col.index])
+
+#Fix Label on classe
+names(data.training.predict)[1] <- 'classe'
+names(data.testing.predict)[1] <- 'classe'
+````
+
+# Model
+
+We build a random forest model to using the filter columns
+
+````{r}
+rf_model  <- randomForest(classe ~ ., data.training.predict, ntree=500, mtry=32)
+plot(rf_model)
+
+varImpPlot(rf_model,cex=0.5)
+```
+
+#Cross validation
+## training part accuracy
+```{r}
+training_pred <- predict(rf_model, data.training.predict) 
+print(confusionMatrix(training_pred, data.training.predict$classe))
+````
+
+## testing part accuracy
+```{r}
+testing_pred <- predict(rf_model, data.testing.predict) 
+print(confusionMatrix(testing_pred, data.testing.predict$classe))
+````
+
+#The answers
+
+```{r}
+answers <- predict(rf_model, raw.testing.predict) 
+answers
+```
+
+##Generate the answers files
+````{r}
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+
+````
